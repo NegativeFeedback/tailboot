@@ -2,6 +2,10 @@
 
 set -eu
 
+# Scratch space for operator scripts, kept out of the tailboot user's home
+# so it survives even when live-config repopulates /home/tailboot at boot.
+mkdir -p -m 0700 /root/scripts
+
 systemctl enable NetworkManager.service
 systemctl enable tailboot-configure.service
 systemctl enable tailscaled.service
