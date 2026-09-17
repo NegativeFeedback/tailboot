@@ -28,7 +28,7 @@ async function main() {
       ? undefined
       : { ssid: values.wifiSsid, password: values.wifiPassword });
   const config = { authKey, wifi };
-  const url = `https://github.com/ShoeBoom/tailboot/releases/download/${encodeURIComponent(metadata.release)}/${encodeURIComponent(metadata.isoName)}`;
+  const url = `https://github.com/NegativeFeedback/tailboot/releases/download/${encodeURIComponent(metadata.release)}/${encodeURIComponent(metadata.isoName)}`;
 
   console.log(`Downloading ${metadata.isoName}…`);
   const response = await fetch(url);
