@@ -8,6 +8,7 @@ lb config noauto \
   --distribution trixie \
   --architecture amd64 \
   --archive-areas "main non-free-firmware" \
+  --apt-indices false \
   --apt-recommends false \
   --apt-source-archives false \
   --debootstrap-options "--variant=minbase --include=ca-certificates" \

@@ -2,11 +2,11 @@
 
 set -eu
 
-# APT's downloaded package indices and cache database are build-time-only
-# (~180MB on the squashfs) and serve no purpose on the live system -- it
-# re-fetches indices itself if the user installs anything post-boot.
-rm -rf /var/lib/apt/lists/*
-rm -f /var/cache/apt/*.bin
+# APT's package indices (~180MB) are dropped from the built image via
+# --apt-indices false in image/auto/config, not here: live-build re-syncs
+# /var/lib/apt/lists (and apt regenerates its cache database from that) as
+# part of its own internal chroot_apt lifecycle, which runs after hooks --
+# an rm here gets silently undone before the image is finalized.
 apt-get clean
 
 # GPU firmware from firmware-misc-nonfree/firmware-linux-free. Tailboot
@@ -39,7 +39,7 @@ if [ -d /usr/share/locale ]; then
   find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name 'en*' -exec rm -rf {} +
 fi
 
-# Leftover build caches from the pip/pipx/cargo installs in the pentest-tools
+# Leftover build caches from the pip/cargo installs in the pentest-tools
 # hook (~90MB): pip's HTTP cache and cargo's registry cache. Neither is
 # consulted again once the packages they cached are installed.
 rm -rf /root/.cache/pip /root/.cargo
