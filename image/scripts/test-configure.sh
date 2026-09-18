@@ -109,7 +109,7 @@ test ! -e "${profile}"
 
 # Inject a failed and a stuck profile writer without requiring Wi-Fi hardware.
 cp "${work_dir}/valid.json" "${config}"
-mkdir "${work_dir}/bin"
+mkdir -p "${work_dir}/bin"
 cat > "${work_dir}/bin/nmcli" <<'SH'
 #!/bin/sh
 echo '[partial profile]'
