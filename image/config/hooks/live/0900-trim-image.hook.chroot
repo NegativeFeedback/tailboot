@@ -14,11 +14,23 @@ apt-get clean
 # regardless of what GPU the target hardware has. NIC/Wi-Fi firmware
 # (iwlwifi, realtek) is untouched -- that's what actually matters here.
 rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/amdgpu /usr/lib/firmware/radeon \
-  /usr/lib/firmware/i915 /usr/lib/firmware/nouveau
+  /usr/lib/firmware/i915 /usr/lib/firmware/nouveau /usr/lib/firmware/xe
 
-# Switch/router ASIC firmware (e.g. Marvell Prestera, ~60MB). Tailboot is a
-# live boot image for general x86-64 hardware, never a network switch.
-rm -rf /usr/lib/firmware/mrvl
+# Switch/router and cloud SmartNIC ASIC firmware (Marvell Prestera, Netronome
+# Agilio, Cavium LiquidIO -- ~150MB combined). Tailboot is a live boot image
+# for general x86-64 hardware, never a network switch or a DPDK offload card.
+rm -rf /usr/lib/firmware/mrvl /usr/lib/firmware/netronome /usr/lib/firmware/liquidio
+
+# Audio, camera/image, AI/NPU, and sensor-hub firmware. Nothing in Tailboot
+# touches audio, a camera, on-device inference, or platform sensors.
+rm -rf /usr/lib/firmware/cirrus
+rm -rf /usr/lib/firmware/intel/sof* /usr/lib/firmware/intel/avs \
+  /usr/lib/firmware/intel/vsc /usr/lib/firmware/intel/vpu \
+  /usr/lib/firmware/intel/ipu /usr/lib/firmware/intel/ish
+
+# Bluetooth firmware. No bluetooth stack (bluez or otherwise) is installed
+# anywhere in this image, so hardware Bluetooth is never brought up.
+rm -f /usr/lib/firmware/intel/ibt-*
 
 # Man pages, package docs, and non-English locale data are convenience-only
 # and never needed for a text-mode SSH-accessed appliance.
