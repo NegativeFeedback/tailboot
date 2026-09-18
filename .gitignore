@@ -26,6 +26,7 @@ image/config/source
 image/config/hooks/live/*
 !image/config/hooks/live/0100-tailboot.hook.chroot
 !image/config/hooks/live/0150-pentest-tools.hook.chroot
+!image/config/hooks/live/0900-cleanup-apt.hook.chroot
 !image/config/hooks/live/0200-autoboot.hook.binary
 image/config/hooks/normal/
 image/config/package-lists/live.list.chroot

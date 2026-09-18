@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -eu
+
+# APT's downloaded package indices and cache database are build-time-only
+# (~180MB on the squashfs) and serve no purpose on the live system -- it
+# re-fetches indices itself if the user installs anything post-boot.
+rm -rf /var/lib/apt/lists/*
+rm -f /var/cache/apt/*.bin
+apt-get clean
