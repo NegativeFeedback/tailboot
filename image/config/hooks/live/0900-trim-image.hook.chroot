@@ -8,3 +8,8 @@ set -eu
 rm -rf /var/lib/apt/lists/*
 rm -f /var/cache/apt/*.bin
 apt-get clean
+
+# NVIDIA GPU firmware from firmware-misc-nonfree (~118MB). Tailboot never
+# drives a display at any point in its boot, so this is dead weight
+# regardless of what GPU the target hardware has.
+rm -rf /usr/lib/firmware/nvidia
