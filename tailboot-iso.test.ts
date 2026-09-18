@@ -128,6 +128,24 @@ test("round-trips Unicode and escaped credentials in a fixed-size JSON record", 
   assert.deepEqual(JSON.parse(decode(patched)), config);
 });
 
+test("round-trips a static IP configuration alongside auth key and Wi-Fi", async () => {
+  const config = {
+    authKey: "tskey-auth-test-key",
+    wifi: { ssid: "office", password: "hunter2" },
+    staticIp: { address: "192.168.1.50/24", gateway: "192.168.1.1", dns: ["1.1.1.1", "8.8.8.8"] },
+  };
+  const output = memoryDestination();
+  await patchTailbootIso({
+    configOffset: 0,
+    source: chunkedStream(encode(CONFIG_PLACEHOLDER), [4094, 1]),
+    config,
+    destination: output.stream,
+  });
+  const patched = join(output.chunks);
+  assert.equal(patched.byteLength, encode(CONFIG_PLACEHOLDER).byteLength);
+  assert.deepEqual(JSON.parse(decode(patched)), config);
+});
+
 test("accepts an exact fit and aborts oversized UTF-8 configuration without writing", async () => {
   const capacity = encode(CONFIG_PLACEHOLDER).byteLength - 1;
   const overhead = encode(JSON.stringify({ authKey: "" })).byteLength;

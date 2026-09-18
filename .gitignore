@@ -1,9 +1,11 @@
 node_modules/
 dist/
-.astro/
-.wrangler/
 .dev.vars*
 .env*
+
+/base.iso
+server/*.exe
+server/tailboot-server
 
 image/.build/
 image/binary/

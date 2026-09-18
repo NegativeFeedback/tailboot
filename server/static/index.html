@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Tailboot</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1.5rem; line-height: 1.5; }
+      label { display: block; margin-top: 1rem; font-weight: 600; }
+      input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.5rem; box-sizing: border-box; }
+      details { margin-top: 1.5rem; border-top: 1px solid #8888; padding-top: 1rem; }
+      button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; font-size: 1rem; }
+      #status { margin-top: 1rem; }
+      #status[data-state="error"] { color: #c00; }
+    </style>
+  </head>
+  <body>
+    <h1>Tailboot</h1>
+    <p>Generate a customized Tailboot ISO with a Tailscale auth key and optional Wi-Fi or static IP configuration.</p>
+
+    <label for="auth-key">Tailscale auth key</label>
+    <input id="auth-key" type="password" autocomplete="off" required />
+
+    <details>
+      <summary>Wi-Fi (optional)</summary>
+      <label for="wifi-ssid">Network name (SSID)</label>
+      <input id="wifi-ssid" type="text" autocomplete="off" />
+      <label for="wifi-password">Password</label>
+      <input id="wifi-password" type="password" autocomplete="off" />
+    </details>
+
+    <details>
+      <summary>Static IP (optional)</summary>
+      <label for="static-address">Address (CIDR, e.g. 192.168.1.50/24)</label>
+      <input id="static-address" type="text" autocomplete="off" />
+      <label for="static-gateway">Gateway</label>
+      <input id="static-gateway" type="text" autocomplete="off" />
+      <label for="static-dns">DNS servers (comma-separated, optional)</label>
+      <input id="static-dns" type="text" autocomplete="off" />
+    </details>
+
+    <button id="generate" type="button">Create ISO</button>
+    <p id="status"></p>
+
+    <script type="module">
+      const statusEl = document.getElementById("status");
+      const authKeyEl = document.getElementById("auth-key");
+      const wifiSsidEl = document.getElementById("wifi-ssid");
+      const wifiPasswordEl = document.getElementById("wifi-password");
+      const staticAddressEl = document.getElementById("static-address");
+      const staticGatewayEl = document.getElementById("static-gateway");
+      const staticDnsEl = document.getElementById("static-dns");
+
+      function setStatus(message, state) {
+        statusEl.textContent = message;
+        if (state) statusEl.dataset.state = state;
+        else delete statusEl.dataset.state;
+      }
+
+      document.getElementById("generate").addEventListener("click", async () => {
+        const authKey = authKeyEl.value.trim();
+        if (!authKey) {
+          setStatus("Enter a Tailscale auth key.", "error");
+          return;
+        }
+
+        const config = { authKey };
+
+        const ssid = wifiSsidEl.value.trim();
+        const password = wifiPasswordEl.value;
+        if (ssid || password) {
+          if (!ssid || !password) {
+            setStatus("Wi-Fi needs both a network name and a password.", "error");
+            return;
+          }
+          config.wifi = { ssid, password };
+        }
+
+        const address = staticAddressEl.value.trim();
+        const gateway = staticGatewayEl.value.trim();
+        if (address || gateway) {
+          if (!address || !gateway) {
+            setStatus("Static IP needs both an address and a gateway.", "error");
+            return;
+          }
+          config.staticIp = { address, gateway };
+          const dns = staticDnsEl.value.split(",").map((s) => s.trim()).filter(Boolean);
+          if (dns.length > 0) config.staticIp.dns = dns;
+        }
+
+        setStatus("Generating ISO…");
+        try {
+          const response = await fetch("/api/iso", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config),
+          });
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          const match = /filename="?([^";]+)"?/.exec(response.headers.get("Content-Disposition") ?? "");
+          a.download = match ? match[1] : "tailboot.iso";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          setStatus("Done. Check your downloads.");
+        } catch (error) {
+          setStatus(`Failed: ${error.message}`, "error");
+        } finally {
+          authKeyEl.value = "";
+          wifiPasswordEl.value = "";
+        }
+      });
+    </script>
+  </body>
+</html>

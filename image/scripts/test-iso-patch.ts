@@ -27,6 +27,7 @@ try {
   const config = {
     authKey: "tskey-auth-test-key",
     wifi: { ssid: 'Café "网络" 📶', password: ' spaces " \\ $() `secret` ' },
+    staticIp: { address: "192.168.1.50/24", gateway: "192.168.1.1", dns: ["1.1.1.1", "8.8.8.8"] },
   };
   // An odd chunk size exercises a slot split across download chunks.
   const input = createReadStream(iso, { highWaterMark: 4093 })[Symbol.asyncIterator]();

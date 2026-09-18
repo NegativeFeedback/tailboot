@@ -13,5 +13,5 @@
 - YAGNI: do not add things unless they are needed now.
 - Prefer omission over enforcement. Do not add machinery that removes, disables, or guards against software or behavior that Tailboot does not configure.
 - Automated releases should verify behavior owned by Tailboot. A failed release must not replace the last working release presented to users.
-- The auth key the end users provide, should always be processed client side. Privacy is crucial
+- The auth key end users provide must never be sent to infrastructure they don't control. It's fine for it to be processed by a deployment the end user runs themselves (e.g. the self-hosted Docker image processing it server-side to patch the ISO) -- what's ruled out is sending it to a third-party-hosted service. Privacy is crucial
 - There are production users of this application. Therefore we have a no regression policy

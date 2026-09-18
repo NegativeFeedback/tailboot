@@ -1,13 +1,9 @@
 <h1 align="center">
-  <img src="site/public/logo.svg" alt="Tailboot" width="420">
+  <img src="assets/logo.svg" alt="Tailboot" width="420">
 </h1>
 
 <p align="center">
   <strong>Use Tailboot to start Debian and connect to a computer with Tailscale SSH.</strong>
-</p>
-
-<p align="center">
-  <a href="https://tailboot.download/"><strong>Create a Tailboot USB drive</strong></a>
 </p>
 
 Tailboot is a Debian 13 live image. It connects the computer to your tailnet.
@@ -41,6 +37,7 @@ After you connect, use APT to install other software.
 Make sure that you have these items:
 
 - A Tailscale account
+- Docker, to run the Tailboot image generator
 - A USB drive
 - A computer with an x86-64 processor that can start from a USB drive
 
@@ -68,13 +65,37 @@ apply to the tag.
 
 ### 2. Create the ISO
 
-1. Open [tailboot.download](https://tailboot.download/).
-2. Enter the auth key.
-3. If you want to use Wi-Fi, enter the Wi-Fi network name and password.
-4. Select **Create ISO**.
+Tailboot ships as a self-hosted Docker image. It bundles a pre-built base ISO
+and serves both a web form and a JSON API for customizing it -- there is no
+public website or third-party service involved.
 
-Your browser downloads the base ISO. It adds your configuration to the ISO in
-your browser. It does not send your credentials to the Tailboot server.
+```sh
+docker run -p 8080:8080 ghcr.io/negativefeedback/tailboot:latest
+```
+
+Then either:
+
+- Open <http://localhost:8080> in a browser, enter the auth key and any
+  optional Wi-Fi or static IP settings, and select **Create ISO**.
+- Or call the API directly:
+
+  ```sh
+  curl -X POST http://localhost:8080/api/iso \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "authKey": "tskey-auth-...",
+      "wifi": { "ssid": "your-network", "password": "your-password" },
+      "staticIp": { "address": "192.168.1.50/24", "gateway": "192.168.1.1", "dns": ["1.1.1.1"] }
+    }' \
+    -o tailboot.iso
+  ```
+
+  `wifi` and `staticIp` are both optional. `staticIp.dns` is optional within
+  `staticIp`. The static IP applies to whichever Ethernet adapter the machine
+  presents, regardless of its interface name.
+
+Your customized ISO is generated and downloaded from your own container. Your
+credentials are never sent to a third party.
 
 ### 3. Write the ISO to a USB drive
 
@@ -115,15 +136,15 @@ policy examples.
   contains the Wi-Fi password as plain text if you supply one.
 - Keep the customized ISO and the USB drive in a secure location. Do not give
   them to other persons.
-- The browser writes the credentials to the ISO. It does not send them to the
-  Tailboot server.
+- Your own Docker container writes the credentials to the ISO. They are never
+  sent to a third party -- run the image on infrastructure you control.
 - Each time Tailboot starts, it creates a new ephemeral Tailscale machine
   identity. Tailboot does not keep or restore Tailscale state.
 - The auth key expires after 90 days. When the key expires, create a new key and
   a new ISO.
-- Each [GitHub release](https://github.com/ShoeBoom/tailboot/releases) contains
-  the base ISO and its SHA-256 checksum. The checksum applies only to the base
-  ISO. It does not apply to a customized ISO.
+- Each [GitHub release](https://github.com/NegativeFeedback/tailboot/releases)
+  contains the base ISO and its SHA-256 checksum. The checksum applies only to
+  the base ISO. It does not apply to a customized ISO.
 
 ## Product limits
 
@@ -143,12 +164,11 @@ workstation.
 
 Tailboot uses the [MIT License](LICENSE).
 
-Use these commands to start the website on your computer:
+Use these commands to test the shared ISO-patching logic:
 
 ```sh
 pnpm install
 pnpm test
-pnpm dev
 ```
 
 Use a Debian 13 computer to build the ISO. Install `live-build` and `curl`.
@@ -159,3 +179,31 @@ sudo ./image/scripts/build-iso.sh tailboot-local-amd64.iso
 ```
 
 The script writes the ISO to `image/dist/`.
+
+### Server (`server/`)
+
+The Docker image's web UI and API live in `server/`, a standalone Go module
+(no dependency on the pnpm workspace):
+
+```sh
+cd server
+go test ./...
+# Needs a base ISO at /data/base.iso; the offset is baked in at build time,
+# same as ISO_NAME/RELEASE_TAG (see the Dockerfile).
+go run -ldflags "-X main.configOffsetStr=<offset from image/scripts/config-offset.sh>" .
+```
+
+### Docker image
+
+```sh
+docker build \
+  --build-arg ISO_NAME=tailboot-local-amd64.iso \
+  --build-arg RELEASE_TAG=dev \
+  --build-arg CONFIG_OFFSET=<offset from image/scripts/config-offset.sh> \
+  -t tailboot .
+```
+
+The build expects a `base.iso` file at the repository root (the output of
+`build-iso.sh`, renamed). In CI, the `build-docker` job in
+`.github/workflows/release.yml` stages this automatically from the same
+`release-iso` build and pushes to `ghcr.io/negativefeedback/tailboot`.

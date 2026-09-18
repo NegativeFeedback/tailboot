@@ -1,0 +1,10 @@
+.git
+node_modules
+image/.build
+image/binary
+image/cache
+image/chroot
+image/local
+image/dist
+*.iso
+!base.iso

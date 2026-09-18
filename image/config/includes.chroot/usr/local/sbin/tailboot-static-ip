@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -eu
+umask 077
+
+config=/run/live/medium/TAILBOOT.JSON
+if ! jq -e '.staticIp != null' "${config}" > /dev/null; then
+  exit 0
+fi
+
+address=$(jq -r '.staticIp.address' "${config}")
+gateway=$(jq -r '.staticIp.gateway' "${config}")
+dns=$(jq -r '(.staticIp.dns // []) | join(",")' "${config}")
+
+# ifname '*' matches any Ethernet device regardless of what the hypervisor or
+# driver names it (eth0, ens18, enp1s0, ...), the same trick tailboot-wifi
+# uses for the wireless profile. Generate offline so a malformed value cannot
+# hold up boot; NetworkManager handles applying it once published.
+set -- type ethernet ifname '*' con-name tailboot-static-ip \
+  ipv4.method manual ipv4.addresses "${address}" ipv4.gateway "${gateway}"
+if [ -n "${dns}" ]; then
+  set -- "$@" ipv4.dns "${dns}"
+fi
+
+nmcli --offline connection add "$@" > /run/tailboot/static-ip.nmconnection
+mkdir -p /run/NetworkManager/system-connections
+mv /run/tailboot/static-ip.nmconnection \
+  /run/NetworkManager/system-connections/tailboot-static-ip.nmconnection

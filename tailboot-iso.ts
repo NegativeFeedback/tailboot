@@ -5,6 +5,7 @@ export { CONFIG_PLACEHOLDER } from "./tailboot-iso-core.ts";
 export type TailbootConfig = {
   authKey: string;
   wifi?: { ssid: string; password: string };
+  staticIp?: { address: string; gateway: string; dns?: string[] };
 };
 
 type PatchOptions = {
