@@ -9,7 +9,20 @@ rm -rf /var/lib/apt/lists/*
 rm -f /var/cache/apt/*.bin
 apt-get clean
 
-# NVIDIA GPU firmware from firmware-misc-nonfree (~118MB). Tailboot never
-# drives a display at any point in its boot, so this is dead weight
-# regardless of what GPU the target hardware has.
-rm -rf /usr/lib/firmware/nvidia
+# GPU firmware from firmware-misc-nonfree/firmware-linux-free. Tailboot
+# never drives a display at any point in its boot, so this is dead weight
+# regardless of what GPU the target hardware has. NIC/Wi-Fi firmware
+# (iwlwifi, realtek) is untouched -- that's what actually matters here.
+rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/amdgpu /usr/lib/firmware/radeon \
+  /usr/lib/firmware/i915 /usr/lib/firmware/nouveau
+
+# Switch/router ASIC firmware (e.g. Marvell Prestera, ~60MB). Tailboot is a
+# live boot image for general x86-64 hardware, never a network switch.
+rm -rf /usr/lib/firmware/mrvl
+
+# Man pages, package docs, and non-English locale data are convenience-only
+# and never needed for a text-mode SSH-accessed appliance.
+rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/*
+if [ -d /usr/share/locale ]; then
+  find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name 'en*' -exec rm -rf {} +
+fi
