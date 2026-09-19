@@ -21,10 +21,12 @@ jobs:
       contents: read
     outputs:
       iso_name: ${{ steps.metadata.outputs.iso_name }}
+      iso_name_nowifi: ${{ steps.metadata.outputs.iso_name_nowifi }}
       release_tag: ${{ steps.metadata.outputs.release_tag }}
       release_commit: ${{ steps.metadata.outputs.release_commit }}
       create_tag: ${{ steps.metadata.outputs.create_tag }}
       config_offset: ${{ steps.config.outputs.offset }}
+      config_offset_nowifi: ${{ steps.config.outputs.offset_nowifi }}
     steps:
       - name: Install build tools
         run: |
@@ -67,19 +69,33 @@ jobs:
           fi
 
           iso_name="tailboot-${release_tag}-amd64.iso"
+          iso_name_nowifi="tailboot-${release_tag}-amd64-no-wifi.iso"
           echo "iso_name=${iso_name}" >> "${GITHUB_OUTPUT}"
+          echo "iso_name_nowifi=${iso_name_nowifi}" >> "${GITHUB_OUTPUT}"
           echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
           echo "create_tag=${create_tag}" >> "${GITHUB_OUTPUT}"
           echo "release_commit=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
-      - name: Build ISO
+      # Two full live-build runs, not one build patched into two images: both
+      # variants go through live-build's own bootloader/El Torito/hybrid-boot
+      # assembly unchanged, so neither can have a hand-rolled repack subtly
+      # break BIOS/UEFI boot. The no-wifi variant runs first so the final
+      # image/chroot left on disk for the steps below is the full variant,
+      # matching this job's behavior before this variant existed.
+      - name: Build no-wifi ISO
         run: |
-          # Keep the directory runner-owned so the checksum step can write to it.
           mkdir -p image/dist
-          sudo ./image/scripts/build-iso.sh "${{ steps.metadata.outputs.iso_name }}"
+          sudo ./image/scripts/build-iso.sh \
+            "${{ steps.metadata.outputs.iso_name_nowifi }}" no-wifi
+
+      - name: Build full ISO
+        run: |
+          sudo ./image/scripts/build-iso.sh "${{ steps.metadata.outputs.iso_name }}" full
 
       - name: Verify image contents and boot records
-        run: ./image/scripts/verify-iso.sh "image/dist/${{ steps.metadata.outputs.iso_name }}"
+        run: |
+          ./image/scripts/verify-iso.sh "image/dist/${{ steps.metadata.outputs.iso_name }}"
+          ./image/scripts/verify-iso.sh "image/dist/${{ steps.metadata.outputs.iso_name_nowifi }}"
 
       - name: Verify configuration with Debian's NetworkManager
         run: sudo chroot image/chroot /bin/sh < image/scripts/test-configure.sh
@@ -90,29 +106,37 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      - name: Read configuration byte offset
+      - name: Read configuration byte offsets
         id: config
         run: |
           offset=$(./image/scripts/config-offset.sh "image/dist/${{ steps.metadata.outputs.iso_name }}")
           echo "offset=${offset}" >> "${GITHUB_OUTPUT}"
+          offset_nowifi=$(./image/scripts/config-offset.sh "image/dist/${{ steps.metadata.outputs.iso_name_nowifi }}")
+          echo "offset_nowifi=${offset_nowifi}" >> "${GITHUB_OUTPUT}"
 
-      - name: Test browser customizer against the built ISO
+      - name: Test browser customizer against the built ISOs
         run: |
           node --test tailboot-iso.test.ts
           node image/scripts/test-iso-patch.ts \
             "image/dist/${{ steps.metadata.outputs.iso_name }}" "${{ steps.config.outputs.offset }}"
+          node image/scripts/test-iso-patch.ts \
+            "image/dist/${{ steps.metadata.outputs.iso_name_nowifi }}" "${{ steps.config.outputs.offset_nowifi }}"
 
-      - name: Create checksum
+      - name: Create checksums
         working-directory: image/dist
-        run: sha256sum "${{ steps.metadata.outputs.iso_name }}" > "${{ steps.metadata.outputs.iso_name }}.sha256"
+        run: |
+          sha256sum "${{ steps.metadata.outputs.iso_name }}" > "${{ steps.metadata.outputs.iso_name }}.sha256"
+          sha256sum "${{ steps.metadata.outputs.iso_name_nowifi }}" > "${{ steps.metadata.outputs.iso_name_nowifi }}.sha256"
 
-      - name: Upload ISO
+      - name: Upload ISOs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-iso
           path: |
             image/dist/${{ steps.metadata.outputs.iso_name }}
             image/dist/${{ steps.metadata.outputs.iso_name }}.sha256
+            image/dist/${{ steps.metadata.outputs.iso_name_nowifi }}
+            image/dist/${{ steps.metadata.outputs.iso_name_nowifi }}.sha256
           compression-level: 0
 
   build-cli:
@@ -194,6 +218,7 @@ jobs:
           RELEASE_COMMIT: ${{ needs.release-iso.outputs.release_commit }}
           CREATE_TAG: ${{ needs.release-iso.outputs.create_tag }}
           ISO_NAME: ${{ needs.release-iso.outputs.iso_name }}
+          ISO_NAME_NOWIFI: ${{ needs.release-iso.outputs.iso_name_nowifi }}
         run: |
           if release=$(gh release view "${RELEASE_TAG}" --json isDraft,assets 2>/dev/null); then
             if [ "$(jq -r .isDraft <<< "${release}")" = "true" ]; then
@@ -203,21 +228,22 @@ jobs:
             fi
 
             assets=$(jq -r '.assets[].name' <<< "${release}")
-            if grep -Fxq "${ISO_NAME}" <<< "${assets}" \
-              && grep -Fxq "${ISO_NAME}.sha256" <<< "${assets}"; then
-              # Only reuse the rebuilt offset if the published ISO is identical.
-              gh release download "${RELEASE_TAG}" --pattern "${ISO_NAME}.sha256" \
-                --dir "${RUNNER_TEMP}/tailboot-release"
-              if ! cmp "dist/${ISO_NAME}.sha256" \
-                "${RUNNER_TEMP}/tailboot-release/${ISO_NAME}.sha256"; then
-                echo "The rebuilt ISO differs from the published release; refusing to deploy its offset." >&2
+            for iso_name in "${ISO_NAME}" "${ISO_NAME_NOWIFI}"; do
+              if ! grep -Fxq "${iso_name}" <<< "${assets}" \
+                || ! grep -Fxq "${iso_name}.sha256" <<< "${assets}"; then
+                echo "The release exists without both expected ISO assets; refusing to modify it." >&2
                 exit 1
               fi
-              exit 0
-            fi
-
-            echo "The release exists without both expected ISO assets; refusing to modify it." >&2
-            exit 1
+              # Only reuse the rebuilt offset if the published ISO is identical.
+              gh release download "${RELEASE_TAG}" --pattern "${iso_name}.sha256" \
+                --dir "${RUNNER_TEMP}/tailboot-release" --clobber
+              if ! cmp "dist/${iso_name}.sha256" \
+                "${RUNNER_TEMP}/tailboot-release/${iso_name}.sha256"; then
+                echo "The rebuilt ${iso_name} differs from the published release; refusing to deploy its offset." >&2
+                exit 1
+              fi
+            done
+            exit 0
           fi
 
           if [ "${CREATE_TAG}" = "true" ]; then
@@ -264,8 +290,10 @@ jobs:
 
       # This job does not need publish-release to succeed -- it patches from
       # this run's own build artifact, not a downloaded GitHub Release asset.
-      - name: Stage base ISO for the Docker build context
-        run: mv "dist/${{ needs.release-iso.outputs.iso_name }}" base.iso
+      - name: Stage base ISOs for the Docker build context
+        run: |
+          mv "dist/${{ needs.release-iso.outputs.iso_name }}" base.iso
+          mv "dist/${{ needs.release-iso.outputs.iso_name_nowifi }}" base-nowifi.iso
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -287,5 +315,7 @@ jobs:
             ghcr.io/negativefeedback/tailboot:latest
           build-args: |
             ISO_NAME=${{ needs.release-iso.outputs.iso_name }}
+            ISO_NAME_NOWIFI=${{ needs.release-iso.outputs.iso_name_nowifi }}
             RELEASE_TAG=${{ needs.release-iso.outputs.release_tag }}
             CONFIG_OFFSET=${{ needs.release-iso.outputs.config_offset }}
+            CONFIG_OFFSET_NOWIFI=${{ needs.release-iso.outputs.config_offset_nowifi }}

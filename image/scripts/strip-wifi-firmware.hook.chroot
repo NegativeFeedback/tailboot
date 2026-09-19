@@ -1,0 +1,43 @@
+#!/bin/sh
+
+set -eu
+
+# Materialized into config/hooks/live/ only for the no-wifi ISO variant, by
+# build-iso.sh. Strips wireless chipset firmware entirely -- this variant is
+# for deployments that only ever use Ethernet. Bluetooth firmware for these
+# same combo chips is included here too (no bluetooth stack is installed
+# anywhere in this image, per the same reasoning as the Intel ibt-* cut in
+# 0900-trim-image). Ethernet/NIC firmware is untouched.
+
+rm -f /usr/lib/firmware/iwlwifi-*
+rm -rf /usr/lib/firmware/ath10k /usr/lib/firmware/ath11k /usr/lib/firmware/ath12k \
+  /usr/lib/firmware/ath6k /usr/lib/firmware/ath9k_htc /usr/lib/firmware/ar3k \
+  /usr/lib/firmware/qca /usr/lib/firmware/mediatek \
+  /usr/lib/firmware/brcm /usr/lib/firmware/cypress \
+  /usr/lib/firmware/rtw88 /usr/lib/firmware/rtw89 /usr/lib/firmware/rtlwifi \
+  /usr/lib/firmware/rtl_nic /usr/lib/firmware/realtek /usr/lib/firmware/rtl_bt \
+  /usr/lib/firmware/libertas /usr/lib/firmware/libertas_sdio \
+  /usr/lib/firmware/silabs /usr/lib/firmware/wl18xx /usr/lib/firmware/wfx \
+  /usr/lib/firmware/ti-connectivity /usr/lib/firmware/mwl8k \
+  /usr/lib/firmware/zd1211 /usr/lib/firmware/advansys
+
+rm -f /usr/lib/firmware/mt7601u.bin /usr/lib/firmware/mt7650.bin \
+  /usr/lib/firmware/mt7662.bin /usr/lib/firmware/mt7662_rom_patch.bin \
+  /usr/lib/firmware/rt2561*.bin /usr/lib/firmware/rt2661.bin \
+  /usr/lib/firmware/rt2860.bin /usr/lib/firmware/rt2870.bin \
+  /usr/lib/firmware/rt3070.bin /usr/lib/firmware/rt3071.bin \
+  /usr/lib/firmware/rt3090.bin /usr/lib/firmware/rt3290.bin \
+  /usr/lib/firmware/rt73.bin \
+  /usr/lib/firmware/atmel_at76c50*.bin \
+  /usr/lib/firmware/ar5523.bin /usr/lib/firmware/ath3k-1.fw \
+  /usr/lib/firmware/htc_7010.fw /usr/lib/firmware/htc_9271.fw \
+  /usr/lib/firmware/carl9170-1.fw \
+  /usr/lib/firmware/agere_ap_fw.bin /usr/lib/firmware/agere_sta_fw.bin \
+  /usr/lib/firmware/ipw2100-*.fw /usr/lib/firmware/ipw2200-*.fw \
+  /usr/lib/firmware/ipw2x00.LICENSE \
+  /usr/lib/firmware/libertas_cs.fw /usr/lib/firmware/libertas_cs_helper.fw \
+  /usr/lib/firmware/lbtf_usb.bin \
+  /usr/lib/firmware/sd8385*.bin /usr/lib/firmware/sd8686*.bin \
+  /usr/lib/firmware/sd8688*.bin /usr/lib/firmware/usb8388.bin \
+  /usr/lib/firmware/wil6210.brd /usr/lib/firmware/wil6210.fw \
+  /usr/lib/firmware/wsm_22.bin /usr/lib/firmware/vntwusb.fw

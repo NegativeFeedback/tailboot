@@ -15,16 +15,54 @@ import (
 var staticFiles embed.FS
 
 // Baked in at image build time via
-// -ldflags "-X main.isoName=... -X main.release=... -X main.configOffsetStr=..."
-// so the binary always matches the one base ISO packaged alongside it.
+// -ldflags "-X main.isoName=... -X main.isoNameNoWifi=... -X main.release=...
+//
+//	-X main.configOffsetStr=... -X main.configOffsetNoWifiStr=..."
+//
+// so the binary always matches the two base ISOs packaged alongside it.
 var (
-	isoName         = "tailboot.iso"
-	release         = "dev"
-	configOffsetStr = "0"
+	isoName               = "tailboot.iso"
+	isoNameNoWifi         = "tailboot-no-wifi.iso"
+	release               = "dev"
+	configOffsetStr       = "0"
+	configOffsetNoWifiStr = "0"
 )
 
 // Overridable in tests; fixed in production.
-var basePath = "/data/base.iso"
+var (
+	basePathFull   = "/data/base.iso"
+	basePathNoWifi = "/data/base-nowifi.iso"
+)
+
+// variant pairs a base ISO on disk with the metadata needed to patch and
+// serve it. The full variant carries every wireless chipset's firmware; the
+// no-wifi variant strips it entirely for a meaningfully smaller download.
+// handleGenerateISO picks between them based on whether the request
+// includes Wi-Fi credentials -- there's no reason to ship wireless firmware
+// to a request that can't use it.
+type variant struct {
+	path         string
+	isoName      string
+	configOffset int64
+	isoSize      int64
+}
+
+var (
+	variantFull   variant
+	variantNoWifi variant
+)
+
+func loadVariant(path, name, offsetStr string) variant {
+	offset, err := strconv.ParseInt(offsetStr, 10, 64)
+	if err != nil {
+		log.Fatalf("invalid baked-in config offset %q for %s: %v", offsetStr, name, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		log.Fatalf("base ISO not found at %s: %v", path, err)
+	}
+	return variant{path: path, isoName: name, configOffset: offset, isoSize: info.Size()}
+}
 
 type wifiConfig struct {
 	SSID     string `json:"ssid"`
@@ -56,23 +94,9 @@ func (c tailbootConfig) validate() error {
 	return nil
 }
 
-var (
-	configOffset int64
-	isoSize      int64
-)
-
 func main() {
-	offset, err := strconv.ParseInt(configOffsetStr, 10, 64)
-	if err != nil {
-		log.Fatalf("invalid baked-in config offset %q: %v", configOffsetStr, err)
-	}
-	configOffset = offset
-
-	info, err := os.Stat(basePath)
-	if err != nil {
-		log.Fatalf("base ISO not found at %s: %v", basePath, err)
-	}
-	isoSize = info.Size()
+	variantFull = loadVariant(basePathFull, isoName, configOffsetStr)
+	variantNoWifi = loadVariant(basePathNoWifi, isoNameNoWifi, configOffsetNoWifiStr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
@@ -83,7 +107,8 @@ func main() {
 		port = "8080"
 	}
 	addr := ":" + port
-	log.Printf("tailboot server listening on %s (release %s, iso %s)", addr, release, isoName)
+	log.Printf("tailboot server listening on %s (release %s, full %s, no-wifi %s)",
+		addr, release, variantFull.isoName, variantNoWifi.isoName)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
@@ -112,6 +137,11 @@ func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	v := variantFull
+	if cfg.Wifi == nil {
+		v = variantNoWifi
+	}
+
 	// Re-marshal into a canonical form rather than forwarding the raw body:
 	// this drops unexpected extra fields and any attacker-controlled
 	// formatting/whitespace that would otherwise eat into the 4095-byte slot
@@ -122,7 +152,7 @@ func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := validateAndOpenISO(basePath, configOffset, configJSON)
+	f, err := validateAndOpenISO(v.path, v.configOffset, configJSON)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, ErrConfigTooLarge) || errors.Is(err, ErrIncompatibleISO) {
@@ -133,10 +163,10 @@ func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", isoName))
-	w.Header().Set("Content-Length", strconv.FormatInt(isoSize, 10))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", v.isoName))
+	w.Header().Set("Content-Length", strconv.FormatInt(v.isoSize, 10))
 
-	if err := writePatchedISO(w, f, configOffset, configJSON); err != nil {
+	if err := writePatchedISO(w, f, v.configOffset, configJSON); err != nil {
 		// The response is already committed at this point; nothing more to
 		// do but log for operators. Never log cfg/configJSON here -- it
 		// carries the caller's Tailscale auth key and Wi-Fi password.

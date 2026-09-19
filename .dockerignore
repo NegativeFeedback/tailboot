@@ -8,3 +8,4 @@ image/local
 image/dist
 *.iso
 !base.iso
+!base-nowifi.iso

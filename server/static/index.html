@@ -13,6 +13,7 @@
       button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; font-size: 1rem; }
       #status { margin-top: 1rem; }
       #status[data-state="error"] { color: #c00; }
+      #variant-hint { margin-top: 1rem; opacity: 0.75; font-size: 0.9rem; }
     </style>
   </head>
   <body>
@@ -40,11 +41,13 @@
       <input id="static-dns" type="text" autocomplete="off" />
     </details>
 
+    <p id="variant-hint"></p>
     <button id="generate" type="button">Create ISO</button>
     <p id="status"></p>
 
     <script type="module">
       const statusEl = document.getElementById("status");
+      const variantHintEl = document.getElementById("variant-hint");
       const authKeyEl = document.getElementById("auth-key");
       const wifiSsidEl = document.getElementById("wifi-ssid");
       const wifiPasswordEl = document.getElementById("wifi-password");
@@ -57,6 +60,15 @@
         if (state) statusEl.dataset.state = state;
         else delete statusEl.dataset.state;
       }
+
+      function updateVariantHint() {
+        variantHintEl.textContent = wifiSsidEl.value.trim() || wifiPasswordEl.value
+          ? "Wi-Fi entered: building the full ISO, which includes wireless chipset firmware."
+          : "No Wi-Fi entered: building the smaller Ethernet-only ISO (no wireless firmware).";
+      }
+      wifiSsidEl.addEventListener("input", updateVariantHint);
+      wifiPasswordEl.addEventListener("input", updateVariantHint);
+      updateVariantHint();
 
       document.getElementById("generate").addEventListener("click", async () => {
         const authKey = authKeyEl.value.trim();

@@ -97,6 +97,12 @@ Then either:
 Your customized ISO is generated and downloaded from your own container. Your
 credentials are never sent to a third party.
 
+The image bundles two base ISOs and picks automatically: if `wifi` is
+included, you get the full ISO (every wireless chipset's firmware, for
+Wi-Fi-capable deployments); if it's omitted, you get a smaller Ethernet-only
+ISO with no wireless firmware at all. This applies regardless of whether you
+also set `staticIp` -- the two settings are independent.
+
 ### 3. Write the ISO to a USB drive
 
 1. Use [Etcher](https://etcher.balena.io/), `dd`, or an equivalent ISO tool.
@@ -188,22 +194,29 @@ The Docker image's web UI and API live in `server/`, a standalone Go module
 ```sh
 cd server
 go test ./...
-# Needs a base ISO at /data/base.iso; the offset is baked in at build time,
-# same as ISO_NAME/RELEASE_TAG (see the Dockerfile).
-go run -ldflags "-X main.configOffsetStr=<offset from image/scripts/config-offset.sh>" .
+# Needs base ISOs at /data/base.iso and /data/base-nowifi.iso; the offsets
+# are baked in at build time, same as ISO_NAME/RELEASE_TAG (see the
+# Dockerfile).
+go run -ldflags "-X main.configOffsetStr=<offset> -X main.configOffsetNoWifiStr=<offset>" .
 ```
 
 ### Docker image
 
+Build both ISO variants first (`./image/scripts/build-iso.sh <name>.iso full`
+and `... <name>.iso no-wifi`), then:
+
 ```sh
 docker build \
   --build-arg ISO_NAME=tailboot-local-amd64.iso \
+  --build-arg ISO_NAME_NOWIFI=tailboot-local-amd64-no-wifi.iso \
   --build-arg RELEASE_TAG=dev \
-  --build-arg CONFIG_OFFSET=<offset from image/scripts/config-offset.sh> \
+  --build-arg CONFIG_OFFSET=<offset from image/scripts/config-offset.sh, full ISO> \
+  --build-arg CONFIG_OFFSET_NOWIFI=<offset, no-wifi ISO> \
   -t tailboot .
 ```
 
-The build expects a `base.iso` file at the repository root (the output of
-`build-iso.sh`, renamed). In CI, the `build-docker` job in
-`.github/workflows/release.yml` stages this automatically from the same
-`release-iso` build and pushes to `ghcr.io/negativefeedback/tailboot`.
+The build expects `base.iso` and `base-nowifi.iso` at the repository root
+(the two `build-iso.sh` outputs, renamed). In CI, the `build-docker` job in
+`.github/workflows/release.yml` stages both automatically from the same
+`release-iso` build (which builds both variants) and pushes to
+`ghcr.io/negativefeedback/tailboot`.
