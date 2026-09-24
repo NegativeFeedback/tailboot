@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 )
 
 //go:embed static/index.html
@@ -75,10 +77,26 @@ type staticIPConfig struct {
 	DNS     []string `json:"dns,omitempty"`
 }
 
+// scopeType values match what tailboot-engagement splits into
+// /root/scripts/internal.csv and /root/scripts/external.csv on boot.
+const (
+	scopeInternal = "internal"
+	scopeExternal = "external"
+)
+
+type scopeEntry struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
 type tailbootConfig struct {
-	AuthKey  string          `json:"authKey"`
-	Wifi     *wifiConfig     `json:"wifi,omitempty"`
-	StaticIP *staticIPConfig `json:"staticIp,omitempty"`
+	AuthKey    string          `json:"authKey"`
+	Wifi       *wifiConfig     `json:"wifi,omitempty"`
+	StaticIP   *staticIPConfig `json:"staticIp,omitempty"`
+	ClientName string          `json:"clientName,omitempty"`
+	Date       string          `json:"date,omitempty"`
+	KillDate   string          `json:"killDate,omitempty"`
+	Scope      []scopeEntry    `json:"scope,omitempty"`
 }
 
 func (c tailbootConfig) validate() error {
@@ -91,7 +109,52 @@ func (c tailbootConfig) validate() error {
 	if c.StaticIP != nil && (c.StaticIP.Address == "" || c.StaticIP.Gateway == "") {
 		return errors.New("staticIp requires both address and gateway")
 	}
+	for _, s := range c.Scope {
+		if s.Type != scopeInternal && s.Type != scopeExternal {
+			return fmt.Errorf(`scope entries must have type %q or %q`, scopeInternal, scopeExternal)
+		}
+		if s.Value == "" {
+			return errors.New("scope entries require a value")
+		}
+	}
 	return nil
+}
+
+// devicePayload is what actually gets patched into the ISO: the request
+// config plus a server-computed hostname. hostname is never accepted
+// directly from callers -- it's always derived from clientName so the
+// device name is predictable (dropbox-<client>) regardless of what a
+// caller might otherwise put there.
+type devicePayload struct {
+	tailbootConfig
+	Hostname string `json:"hostname,omitempty"`
+}
+
+var (
+	hostnameUnsafe  = regexp.MustCompile(`[^a-z0-9-]+`)
+	hostnameHyphens = regexp.MustCompile(`-{2,}`)
+	filenameUnsafe  = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+)
+
+// sanitizeHostnameLabel makes s safe as an RFC 1123 hostname label: lowercase
+// alphanumeric and hyphens only, no leading/trailing hyphen, short enough to
+// leave room for the "dropbox-" prefix within the 63-byte label limit.
+func sanitizeHostnameLabel(s string) string {
+	s = hostnameUnsafe.ReplaceAllString(strings.ToLower(s), "-")
+	s = hostnameHyphens.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	const maxLen = 55
+	if len(s) > maxLen {
+		s = strings.Trim(s[:maxLen], "-")
+	}
+	return s
+}
+
+// sanitizeFilenameComponent makes s safe to sit between hyphens in a
+// Content-Disposition filename: no path separators or other characters that
+// would confuse a browser or shell.
+func sanitizeFilenameComponent(s string) string {
+	return strings.Trim(filenameUnsafe.ReplaceAllString(s, "-"), "-")
 }
 
 func main() {
@@ -142,11 +205,16 @@ func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
 		v = variantNoWifi
 	}
 
+	payload := devicePayload{tailbootConfig: cfg}
+	if cfg.ClientName != "" {
+		payload.Hostname = "dropbox-" + sanitizeHostnameLabel(cfg.ClientName)
+	}
+
 	// Re-marshal into a canonical form rather than forwarding the raw body:
 	// this drops unexpected extra fields and any attacker-controlled
 	// formatting/whitespace that would otherwise eat into the 4095-byte slot
 	// for no reason.
-	configJSON, err := json.Marshal(cfg)
+	configJSON, err := json.Marshal(payload)
 	if err != nil {
 		http.Error(w, "failed to encode configuration", http.StatusInternalServerError)
 		return
@@ -162,8 +230,14 @@ func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filename := v.isoName
+	if cfg.ClientName != "" && cfg.KillDate != "" {
+		filename = fmt.Sprintf("dropbox-%s-%s.iso",
+			sanitizeFilenameComponent(cfg.ClientName), sanitizeFilenameComponent(cfg.KillDate))
+	}
+
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", v.isoName))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.Header().Set("Content-Length", strconv.FormatInt(v.isoSize, 10))
 
 	if err := writePatchedISO(w, f, v.configOffset, configJSON); err != nil {

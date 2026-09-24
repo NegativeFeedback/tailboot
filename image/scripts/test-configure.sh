@@ -9,7 +9,7 @@ key=/run/tailboot/auth.key
 profile=/run/NetworkManager/system-connections/tailboot-wifi.nmconnection
 static_profile=/run/NetworkManager/system-connections/tailboot-static-ip.nmconnection
 work_dir=$(mktemp -d)
-trap 'rm -f "${config}" "${key}" "${profile}" "${static_profile}" /run/tailboot/wifi.nmconnection /run/tailboot/static-ip.nmconnection; rm -rf "${work_dir}"' EXIT HUP INT TERM
+trap 'rm -f "${config}" "${key}" "${profile}" "${static_profile}" /run/tailboot/wifi.nmconnection /run/tailboot/static-ip.nmconnection /etc/hostname /root/scripts/engagement.txt /root/scripts/internal.csv /root/scripts/external.csv; rm -rf "${work_dir}"' EXIT HUP INT TERM
 mkdir -p /run/live/medium /run/tailboot
 
 printf '%s\n' '{"authKey":"tskey-auth-test"}' > "${config}"
@@ -96,6 +96,45 @@ grep -Fq 'continuing with DHCP' "${work_dir}/error"
 test "$(cat "${key}")" = tskey-auth-test
 test ! -e "${static_profile}"
 
+hostname_file=/etc/hostname
+engagement=/root/scripts/engagement.txt
+internal_csv=/root/scripts/internal.csv
+external_csv=/root/scripts/external.csv
+rm -f "${hostname_file}" "${engagement}" "${internal_csv}" "${external_csv}"
+
+# Engagement metadata: hostname, engagement.txt, and scope CSVs.
+printf '%s\n' \
+  '{"authKey":"tskey-auth-test","hostname":"dropbox-acme-corp","clientName":"Acme Corp","date":"2026-09-24","killDate":"2026-10-24","scope":[{"type":"internal","value":"10.0.0.0/8"},{"type":"external","value":"203.0.113.0/24"},{"type":"external","value":"198.51.100.0/24"}]}' \
+  > "${config}"
+/usr/local/sbin/tailboot-configure
+test "$(cat "${hostname_file}")" = dropbox-acme-corp
+grep -Fxq 'Client: Acme Corp' "${engagement}"
+grep -Fxq 'Start date: 2026-09-24' "${engagement}"
+grep -Fxq 'Kill date: 2026-10-24' "${engagement}"
+test "$(cat "${internal_csv}")" = "10.0.0.0/8"
+test "$(cat "${external_csv}")" = "$(printf '203.0.113.0/24\n198.51.100.0/24')"
+
+# Absent engagement fields write nothing.
+rm -f "${hostname_file}" "${engagement}" "${internal_csv}" "${external_csv}"
+printf '%s\n' '{"authKey":"tskey-auth-test"}' > "${config}"
+/usr/local/sbin/tailboot-configure
+test ! -e "${hostname_file}"
+test ! -e "${engagement}"
+test ! -e "${internal_csv}"
+
+# A malformed scope (not an array) must not fail the required auth-key
+# service, and must not prevent hostname/engagement.txt from being written.
+printf '%s\n' \
+  '{"authKey":"tskey-auth-test","clientName":"Acme Corp","hostname":"dropbox-acme-corp","scope":"not-an-array"}' \
+  > "${config}"
+/usr/local/sbin/tailboot-configure 2> "${work_dir}/error"
+grep -Fq 'scope CSV generation failed' "${work_dir}/error"
+test "$(cat "${key}")" = tskey-auth-test
+test "$(cat "${hostname_file}")" = dropbox-acme-corp
+grep -Fxq 'Client: Acme Corp' "${engagement}"
+test ! -e "${internal_csv}"
+rm -f "${hostname_file}" "${engagement}"
+
 cp "${work_dir}/valid-wifi.json" "${config}"
 
 # Invalid Wi-Fi settings must not fail the required auth-key service.
@@ -137,4 +176,4 @@ if /usr/local/sbin/tailboot-configure 2>/dev/null; then
   exit 1
 fi
 
-echo 'Verified auth-key extraction, Wi-Fi and static IP profiles, permissions, and continuation after errors and timeouts.'
+echo 'Verified auth-key extraction, Wi-Fi/static IP profiles, engagement metadata, permissions, and continuation after errors and timeouts.'

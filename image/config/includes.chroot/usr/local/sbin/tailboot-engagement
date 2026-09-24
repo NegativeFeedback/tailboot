@@ -1,0 +1,50 @@
+#!/bin/sh
+
+set -eu
+umask 077
+
+config=/run/live/medium/TAILBOOT.JSON
+
+# hostname is precomputed server-side (sanitized, "dropbox-<client>") and
+# runs before NetworkManager/tailscaled start, so `tailscale up`'s default
+# device-naming picks it up. Wrapped so a failure here (the hostname command
+# is the riskiest step in this script) can't cost the engagement.txt/scope
+# CSV steps below, which are independent of it.
+if jq -e '.hostname != null' "${config}" > /dev/null; then
+  if ! (
+    hostname_value=$(jq -r '.hostname' "${config}")
+    printf '%s\n' "${hostname_value}" > /etc/hostname
+    hostname "${hostname_value}"
+  ); then
+    echo 'Tailboot hostname setup failed; continuing with the default hostname.' >&2
+  fi
+fi
+
+mkdir -p /root/scripts
+
+# Reference-only: nothing on the box enforces the kill date.
+engagement=/root/scripts/engagement.txt
+rm -f "${engagement}"
+if jq -e '.clientName != null' "${config}" > /dev/null; then
+  printf 'Client: %s\n' "$(jq -r '.clientName' "${config}")" >> "${engagement}"
+fi
+if jq -e '.date != null' "${config}" > /dev/null; then
+  printf 'Start date: %s\n' "$(jq -r '.date' "${config}")" >> "${engagement}"
+fi
+if jq -e '.killDate != null' "${config}" > /dev/null; then
+  printf 'Kill date: %s\n' "$(jq -r '.killDate' "${config}")" >> "${engagement}"
+fi
+if [ ! -s "${engagement}" ]; then
+  rm -f "${engagement}"
+fi
+
+# One target per line (no header) so these drop straight into nmap/masscan
+# -iL without editing.
+if jq -e '.scope != null' "${config}" > /dev/null; then
+  if ! (
+    jq -r '.scope[] | select(.type == "internal") | .value' "${config}" > /root/scripts/internal.csv
+    jq -r '.scope[] | select(.type == "external") | .value' "${config}" > /root/scripts/external.csv
+  ); then
+    echo 'Tailboot scope CSV generation failed.' >&2
+  fi
+fi

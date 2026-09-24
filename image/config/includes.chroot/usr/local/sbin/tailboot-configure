@@ -17,3 +17,7 @@ fi
 if ! timeout --kill-after=1s 10s /usr/local/sbin/tailboot-static-ip; then
   echo 'Tailboot static IP setup failed; continuing with DHCP.' >&2
 fi
+
+if ! timeout --kill-after=1s 10s /usr/local/sbin/tailboot-engagement; then
+  echo 'Tailboot engagement setup failed; continuing without it.' >&2
+fi
