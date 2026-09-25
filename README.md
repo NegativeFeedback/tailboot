@@ -90,8 +90,8 @@ Then either:
       "date": "2026-09-24",
       "killDate": "2026-10-24",
       "scope": [
-        { "type": "internal", "value": "10.0.0.0/8" },
-        { "type": "external", "value": "203.0.113.0/24" }
+        { "name": "Internal", "value": "10.0.0.0/8" },
+        { "name": "CDE", "value": "203.0.113.0/24" }
       ]
     }' \
     -o tailboot.iso
@@ -115,11 +115,14 @@ Then either:
     the kill date. All three (`clientName`, `date`, `killDate`) that are
     present get written to `/root/scripts/engagement.txt` on boot, for the
     operator's reference over SSH.
-  - `scope` entries need `type` (`"internal"` or `"external"`) and `value`
-    (an IP, CIDR, or hostname). On boot they're split by type into
-    `/root/scripts/internal.csv` and `/root/scripts/external.csv` -- one
-    target per line, no header, so they drop straight into `nmap`/`masscan`
-    `-iL` without editing.
+  - `scope` entries need a `name` (an arbitrary scope-list label, e.g.
+    "Internal", "CDE", "External IPs" -- there's no fixed internal/external
+    split) and `value` (an IP, CIDR, or hostname). On boot, entries are
+    grouped by the slugified name (lowercased, non-alphanumeric characters
+    collapsed to hyphens) into one `/root/scripts/<slug>.csv` per distinct
+    name -- one target per line, no header, so they drop straight into
+    `nmap`/`masscan` `-iL` without editing. Two names that slugify the same
+    (e.g. "External IPs" and "external ips") merge into one file.
 
   All of this rides in the same fixed 4095-byte slot patched into the ISO as
   `authKey`/`wifi`/`staticIp`, so there's a practical ceiling on how many

@@ -38,12 +38,25 @@ if [ ! -s "${engagement}" ]; then
   rm -f "${engagement}"
 fi
 
-# One target per line (no header) so these drop straight into nmap/masscan
-# -iL without editing.
+# One file per distinct scope-list name (e.g. "Internal" -> internal.csv,
+# "CDE" -> cde.csv), one target per line with no header so these drop
+# straight into nmap/masscan -iL without editing. Two names that slugify the
+# same (e.g. "External IPs" and "external ips") merge into one file rather
+# than overwrite each other, since the file is selected by slug, not by
+# original name.
+slugify_filter='def slugify: ascii_downcase | gsub("[^a-z0-9-]+"; "-") | gsub("-{2,}"; "-") | gsub("^-+|-+$"; "");'
 if jq -e '.scope != null' "${config}" > /dev/null; then
   if ! (
-    jq -r '.scope[] | select(.type == "internal") | .value' "${config}" > /root/scripts/internal.csv
-    jq -r '.scope[] | select(.type == "external") | .value' "${config}" > /root/scripts/external.csv
+    # Slugs never contain whitespace, so unquoted word-splitting below is safe
+    # and is what lets a failure in this jq call abort the group under set -e
+    # (a pipe into `while` would instead mask it, since dash has no pipefail).
+    slugs=$(jq -r "${slugify_filter} [.scope[].name | slugify] | unique | .[]" "${config}")
+    for slug in ${slugs}; do
+      [ -n "${slug}" ] || continue
+      jq -r --arg slug "${slug}" \
+        "${slugify_filter} .scope[] | select((.name | slugify) == \$slug) | .value" \
+        "${config}" > "/root/scripts/${slug}.csv"
+    done
   ); then
     echo 'Tailboot scope CSV generation failed.' >&2
   fi

@@ -166,13 +166,13 @@ func TestGenerateISOCallerCannotSetHostnameDirectly(t *testing.T) {
 	}
 }
 
-func TestGenerateISOScopeSplitsByType(t *testing.T) {
+func TestGenerateISOScopePreservesArbitraryNames(t *testing.T) {
 	setupVariants(t)
 
 	res := postISO(t, `{"authKey":"tskey-test","scope":[
-		{"type":"internal","value":"10.0.0.0/8"},
-		{"type":"external","value":"203.0.113.0/24"},
-		{"type":"internal","value":"172.16.0.0/12"}
+		{"name":"Internal","value":"10.0.0.0/8"},
+		{"name":"CDE","value":"203.0.113.0/24"},
+		{"name":"Internal","value":"172.16.0.0/12"}
 	]}`)
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(res.Body)
@@ -183,15 +183,40 @@ func TestGenerateISOScopeSplitsByType(t *testing.T) {
 	if !ok || len(scope) != 3 {
 		t.Fatalf("scope = %v, want 3 entries", cfg["scope"])
 	}
+	first := scope[0].(map[string]any)
+	if first["name"] != "Internal" || first["value"] != "10.0.0.0/8" {
+		t.Fatalf("scope[0] = %v, want name Internal / value 10.0.0.0/8", first)
+	}
 }
 
-func TestGenerateISORejectsInvalidScopeType(t *testing.T) {
+func TestGenerateISORejectsScopeMissingNameOrValue(t *testing.T) {
 	setupVariants(t)
 
-	res := postISO(t, `{"authKey":"tskey-test","scope":[{"type":"dmz","value":"10.0.0.0/8"}]}`)
-	if res.StatusCode != http.StatusBadRequest {
-		body, _ := io.ReadAll(res.Body)
-		t.Fatalf("status %d, want 400: %s", res.StatusCode, body)
+	cases := []string{
+		`{"authKey":"tskey-test","scope":[{"value":"10.0.0.0/8"}]}`,
+		`{"authKey":"tskey-test","scope":[{"name":"Internal"}]}`,
+		`{"authKey":"tskey-test","scope":[{"name":"!!!","value":"10.0.0.0/8"}]}`,
+	}
+	for _, body := range cases {
+		res := postISO(t, body)
+		if res.StatusCode != http.StatusBadRequest {
+			respBody, _ := io.ReadAll(res.Body)
+			t.Fatalf("body %s: status %d, want 400: %s", body, res.StatusCode, respBody)
+		}
+	}
+}
+
+func TestSlugifyScopeName(t *testing.T) {
+	cases := map[string]string{
+		"Internal":       "internal",
+		"CDE":            "cde",
+		"External IPs":   "external-ips",
+		"  Extra Space ": "extra-space",
+	}
+	for input, want := range cases {
+		if got := slugifyScopeName(input); got != want {
+			t.Errorf("slugifyScopeName(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 

@@ -77,15 +77,12 @@ type staticIPConfig struct {
 	DNS     []string `json:"dns,omitempty"`
 }
 
-// scopeType values match what tailboot-engagement splits into
-// /root/scripts/internal.csv and /root/scripts/external.csv on boot.
-const (
-	scopeInternal = "internal"
-	scopeExternal = "external"
-)
-
+// scopeEntry.Name is a free-form scope-list name (e.g. Ghostwriter's
+// ProjectScope.name -- "Internal", "CDE", "External IPs", anything).
+// tailboot-engagement groups entries by the slugified name and writes one
+// /root/scripts/<slug>.csv per distinct name on boot.
 type scopeEntry struct {
-	Type  string `json:"type"`
+	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
@@ -110,11 +107,14 @@ func (c tailbootConfig) validate() error {
 		return errors.New("staticIp requires both address and gateway")
 	}
 	for _, s := range c.Scope {
-		if s.Type != scopeInternal && s.Type != scopeExternal {
-			return fmt.Errorf(`scope entries must have type %q or %q`, scopeInternal, scopeExternal)
+		if s.Name == "" {
+			return errors.New("scope entries require a name")
 		}
 		if s.Value == "" {
 			return errors.New("scope entries require a value")
+		}
+		if slugifyScopeName(s.Name) == "" {
+			return fmt.Errorf("scope entry name %q has no characters usable in a filename", s.Name)
 		}
 	}
 	return nil
@@ -155,6 +155,16 @@ func sanitizeHostnameLabel(s string) string {
 // would confuse a browser or shell.
 func sanitizeFilenameComponent(s string) string {
 	return strings.Trim(filenameUnsafe.ReplaceAllString(s, "-"), "-")
+}
+
+// slugifyScopeName turns a scope-list name into the base filename
+// tailboot-engagement writes it under (<slug>.csv). Same rules as
+// sanitizeHostnameLabel (lowercase alphanumeric and hyphens only, collapsed,
+// trimmed) but no length cap -- filenames aren't limited to 63 bytes.
+func slugifyScopeName(s string) string {
+	s = hostnameUnsafe.ReplaceAllString(strings.ToLower(s), "-")
+	s = hostnameHyphens.ReplaceAllString(s, "-")
+	return strings.Trim(s, "-")
 }
 
 func main() {

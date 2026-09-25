@@ -9,7 +9,7 @@ key=/run/tailboot/auth.key
 profile=/run/NetworkManager/system-connections/tailboot-wifi.nmconnection
 static_profile=/run/NetworkManager/system-connections/tailboot-static-ip.nmconnection
 work_dir=$(mktemp -d)
-trap 'rm -f "${config}" "${key}" "${profile}" "${static_profile}" /run/tailboot/wifi.nmconnection /run/tailboot/static-ip.nmconnection /etc/hostname /root/scripts/engagement.txt /root/scripts/internal.csv /root/scripts/external.csv; rm -rf "${work_dir}"' EXIT HUP INT TERM
+trap 'rm -f "${config}" "${key}" "${profile}" "${static_profile}" /run/tailboot/wifi.nmconnection /run/tailboot/static-ip.nmconnection /etc/hostname /root/scripts/engagement.txt /root/scripts/*.csv; rm -rf "${work_dir}"' EXIT HUP INT TERM
 mkdir -p /run/live/medium /run/tailboot
 
 printf '%s\n' '{"authKey":"tskey-auth-test"}' > "${config}"
@@ -99,23 +99,25 @@ test ! -e "${static_profile}"
 hostname_file=/etc/hostname
 engagement=/root/scripts/engagement.txt
 internal_csv=/root/scripts/internal.csv
-external_csv=/root/scripts/external.csv
-rm -f "${hostname_file}" "${engagement}" "${internal_csv}" "${external_csv}"
+cde_csv=/root/scripts/cde.csv
+rm -f "${hostname_file}" "${engagement}" /root/scripts/*.csv
 
-# Engagement metadata: hostname, engagement.txt, and scope CSVs.
+# Engagement metadata: hostname, engagement.txt, and per-name scope CSVs.
+# Two "Internal"/"internal" entries must merge into one file; "CDE" gets its
+# own, arbitrarily-named file -- there's no fixed internal/external split.
 printf '%s\n' \
-  '{"authKey":"tskey-auth-test","hostname":"dropbox-acme-corp","clientName":"Acme Corp","date":"2026-09-24","killDate":"2026-10-24","scope":[{"type":"internal","value":"10.0.0.0/8"},{"type":"external","value":"203.0.113.0/24"},{"type":"external","value":"198.51.100.0/24"}]}' \
+  '{"authKey":"tskey-auth-test","hostname":"dropbox-acme-corp","clientName":"Acme Corp","date":"2026-09-24","killDate":"2026-10-24","scope":[{"name":"Internal","value":"10.0.0.0/8"},{"name":"internal","value":"172.16.0.0/12"},{"name":"CDE","value":"203.0.113.0/24"}]}' \
   > "${config}"
 /usr/local/sbin/tailboot-configure
 test "$(cat "${hostname_file}")" = dropbox-acme-corp
 grep -Fxq 'Client: Acme Corp' "${engagement}"
 grep -Fxq 'Start date: 2026-09-24' "${engagement}"
 grep -Fxq 'Kill date: 2026-10-24' "${engagement}"
-test "$(cat "${internal_csv}")" = "10.0.0.0/8"
-test "$(cat "${external_csv}")" = "$(printf '203.0.113.0/24\n198.51.100.0/24')"
+test "$(cat "${internal_csv}")" = "$(printf '10.0.0.0/8\n172.16.0.0/12')"
+test "$(cat "${cde_csv}")" = "203.0.113.0/24"
 
 # Absent engagement fields write nothing.
-rm -f "${hostname_file}" "${engagement}" "${internal_csv}" "${external_csv}"
+rm -f "${hostname_file}" "${engagement}" /root/scripts/*.csv
 printf '%s\n' '{"authKey":"tskey-auth-test"}' > "${config}"
 /usr/local/sbin/tailboot-configure
 test ! -e "${hostname_file}"
