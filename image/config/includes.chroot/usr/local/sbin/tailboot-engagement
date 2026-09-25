@@ -47,10 +47,15 @@ fi
 slugify_filter='def slugify: ascii_downcase | gsub("[^a-z0-9-]+"; "-") | gsub("-{2,}"; "-") | gsub("^-+|-+$"; "");'
 if jq -e '.scope != null' "${config}" > /dev/null; then
   if ! (
-    # Slugs never contain whitespace, so unquoted word-splitting below is safe
-    # and is what lets a failure in this jq call abort the group under set -e
-    # (a pipe into `while` would instead mask it, since dash has no pipefail).
-    slugs=$(jq -r "${slugify_filter} [.scope[].name | slugify] | unique | .[]" "${config}")
+    # set -e does not apply to commands inside a subshell that is itself the
+    # condition of `if !(...)` -- a failure here would otherwise be silently
+    # swallowed, since the `for` loop below would then run zero times (empty
+    # slugs) and exit 0 on its own, making the whole subshell look
+    # successful. The explicit `|| exit 1` is what actually propagates the
+    # failure. Slugs never contain whitespace, so the unquoted word-splitting
+    # in the loop is safe (a pipe into `while` would mask a failure here too,
+    # since dash has no pipefail).
+    slugs=$(jq -r "${slugify_filter} [.scope[].name | slugify] | unique | .[]" "${config}") || exit 1
     for slug in ${slugs}; do
       [ -n "${slug}" ] || continue
       jq -r --arg slug "${slug}" \

@@ -2,7 +2,7 @@
 
 # Run only inside the disposable build chroot, after the ISO has been built:
 # sudo chroot image/chroot /bin/sh < image/scripts/test-configure.sh
-set -eux
+set -eu
 
 config=/run/live/medium/TAILBOOT.JSON
 key=/run/tailboot/auth.key
