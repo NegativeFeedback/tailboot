@@ -1,0 +1,137 @@
+#!/bin/sh
+
+# Status dashboard shown on tty1 in place of a login prompt (see
+# tailboot-dashboard.service). The top third of the screen is a periodically
+# redrawn status summary; the rest is a live tail of tailscaled's journal,
+# scrolling independently via a terminal scroll region (DECSTBM) so the
+# status area is never disturbed by log output. Ctrl+C drops to a real shell
+# on the same console -- this device has no console password by design (see
+# username=tailboot in image/auto/config), and physical possession already
+# implies control, so this isn't a new hole.
+#
+# Deliberately not `set -e`: this loops forever and most of what it shells
+# out to (tailscale, jq, nmcli) is *expected* to fail or be unready at
+# times (tailscaled still starting, no network yet, etc.) -- each call is
+# individually guarded instead, matching this box's existing fault-tolerance
+# conventions but at the level of a single long-running process rather than
+# a run-once script.
+set -u
+umask 077
+
+total_lines=$(tput lines)
+total_cols=$(tput cols)
+top_lines=$(( total_lines / 3 ))
+[ "${top_lines}" -ge 7 ] || top_lines=7
+log_pid=""
+
+restore_terminal() {
+  tput csr 0 "$((total_lines - 1))" 2>/dev/null
+  tput cnorm 2>/dev/null
+  tput sgr0 2>/dev/null
+  clear
+}
+
+cleanup_and_exit() {
+  [ -n "${log_pid}" ] && kill "${log_pid}" 2>/dev/null
+  restore_terminal
+  exit 0
+}
+
+drop_to_shell() {
+  [ -n "${log_pid}" ] && kill "${log_pid}" 2>/dev/null
+  restore_terminal
+  exec /bin/sh -l
+}
+
+trap drop_to_shell INT
+trap cleanup_and_exit TERM
+
+tailscale_status() {
+  ts_backend="unreachable"
+  ts_tailnet="-"
+  ts_ip="-"
+  ts_version="-"
+  json=$(tailscale status --json 2>/dev/null) || return
+  ts_backend=$(printf '%s' "${json}" | jq -r '.BackendState // "unknown"' 2>/dev/null) || ts_backend="unknown"
+  ts_tailnet=$(printf '%s' "${json}" | jq -r '.CurrentTailnet.Name // "-"' 2>/dev/null) || ts_tailnet="-"
+  ts_ip=$(tailscale ip -4 2>/dev/null) || ts_ip="-"
+  [ -n "${ts_ip}" ] || ts_ip="-"
+  ts_version=$(tailscale version 2>/dev/null | head -n 1) || ts_version="-"
+  [ -n "${ts_version}" ] || ts_version="-"
+}
+
+status_label() {
+  case "${ts_backend}" in
+    Running) echo "CONNECTED (approved)" ;;
+    NeedsMachineAuth) echo "AWAITING APPROVAL in Tailscale admin" ;;
+    NeedsLogin) echo "NOT CONNECTED (no auth key accepted yet)" ;;
+    unreachable) echo "tailscaled not reachable yet" ;;
+    *) echo "NOT CONNECTED (${ts_backend})" ;;
+  esac
+}
+
+render_status() {
+  tailscale_status
+  hostname_now=$(cat /etc/hostname 2>/dev/null) || hostname_now=""
+  [ -n "${hostname_now}" ] || hostname_now=$(hostname 2>/dev/null) || hostname_now="unknown"
+
+  key_state="no auth key extracted"
+  [ -s /run/tailboot/auth.key ] && key_state="auth key present"
+
+  links=$(nmcli -t -f DEVICE,TYPE,STATE device status 2>/dev/null \
+    | awk -F: '$2 == "ethernet" || $2 == "wifi" {printf "%s:%s ", $1, $3}')
+  [ -n "${links}" ] || links="-"
+
+  engagement="-"
+  if [ -r /root/scripts/engagement.txt ]; then
+    engagement=$(tr '\n' ' ' < /root/scripts/engagement.txt | sed 's/ *$//')
+    [ -n "${engagement}" ] || engagement="-"
+  fi
+
+  uptime_now=$(uptime -p 2>/dev/null) || uptime_now="-"
+  rule=$(printf '%*s' "${total_cols}" '' | tr ' ' '-')
+
+  # Built as one buffer and written with a single printf below rather than
+  # writing each positioned line as it's computed: the background
+  # `journalctl -f` writes to this same terminal independently, and
+  # interleaving one of its lines between a `tput cup`/`tput el` pair and the
+  # text that follows it would visibly corrupt a status row until the next
+  # redraw. A single printf is effectively one write(2), which this process
+  # and journalctl's are never both inside at the same instant.
+  buf=$(tput sc 2>/dev/null)
+  row=0
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)TAILBOOT DASHBOARD  |  host: ${hostname_now}  |  $(date '+%Y-%m-%d %H:%M:%S %Z')"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)Tailscale: $(status_label)"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)  tailnet: ${ts_tailnet}   ip: ${ts_ip}   version: ${ts_version}"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)$(printf 'Auth key: %-24s  Links: %s' "${key_state}" "${links}")"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)Engagement: ${engagement}"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)Uptime: ${uptime_now}"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)${rule}"
+  row=$((row + 1))
+  while [ "${row}" -lt "${top_lines}" ]; do
+    buf="${buf}$(tput cup "${row}" 0)$(tput el)"
+    row=$((row + 1))
+  done
+  buf="${buf}$(tput rc 2>/dev/null)"
+  printf '%s' "${buf}"
+}
+
+clear
+tput civis 2>/dev/null
+tput csr "${top_lines}" "$((total_lines - 1))"
+tput cup "${top_lines}" 0
+
+journalctl -u tailscaled -f -n 200 --no-hostname -o short-precise &
+log_pid=$!
+
+while true; do
+  render_status
+  sleep 2 &
+  wait $!
+done

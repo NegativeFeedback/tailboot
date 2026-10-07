@@ -1,0 +1,24 @@
+[Unit]
+Description=Tailboot status dashboard
+# Takes over tty1 in place of the normal login prompt; tty2+ are untouched,
+# so a real shell is always reachable there (Alt+F2 on a physical console)
+# even if this crashes outright instead of falling through to its own
+# Ctrl+C-to-shell escape hatch. After, not Requires/Wants: tailboot.service
+# can take up to its own 2-minute timeout to come up, and showing that
+# in-progress state is this dashboard's whole point.
+After=tailboot-configure.service
+Conflicts=getty@tty1.service
+
+[Service]
+ExecStart=/usr/local/sbin/tailboot-dashboard
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

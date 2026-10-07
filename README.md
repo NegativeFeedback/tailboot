@@ -172,6 +172,19 @@ the `root` user. Refer to the
 [Tailscale SSH documentation](https://tailscale.com/kb/1193/tailscale-ssh) for
 policy examples.
 
+### Local console dashboard
+
+The physical console (tty1) shows a live status dashboard instead of a login
+prompt: hostname, whether the device is connected to the Tailscale control
+plane, awaiting approval in the admin console, or not yet connected, plus the
+tailnet name, Tailscale IP, Ethernet/Wi-Fi link state, auth key presence,
+engagement metadata, uptime, and a live tail of tailscaled's own log below it.
+
+Press Ctrl+C to drop to a root shell on the same console for deeper
+troubleshooting -- this device has no console password by design, so this
+isn't a new hole. Other virtual consoles (Alt+F2, etc.) are untouched and
+always reach a normal shell, including if the dashboard itself crashes.
+
 ## Security
 
 - The customized ISO contains the Tailscale auth key as plain text. It also
