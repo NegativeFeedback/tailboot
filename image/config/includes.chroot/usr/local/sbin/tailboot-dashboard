@@ -18,8 +18,10 @@
 set -u
 umask 077
 
-total_lines=$(tput lines)
-total_cols=$(tput cols)
+total_lines=$(tput lines 2>/dev/null)
+total_cols=$(tput cols 2>/dev/null)
+case "${total_lines}" in ''|*[!0-9]*) total_lines=24 ;; esac
+case "${total_cols}" in ''|*[!0-9]*) total_cols=80 ;; esac
 top_lines=$(( total_lines / 3 ))
 [ "${top_lines}" -ge 7 ] || top_lines=7
 log_pid=""
@@ -124,8 +126,8 @@ render_status() {
 
 clear
 tput civis 2>/dev/null
-tput csr "${top_lines}" "$((total_lines - 1))"
-tput cup "${top_lines}" 0
+tput csr "${top_lines}" "$((total_lines - 1))" 2>/dev/null
+tput cup "${top_lines}" 0 2>/dev/null
 
 journalctl -u tailscaled -f -n 200 --no-hostname -o short-precise &
 log_pid=$!

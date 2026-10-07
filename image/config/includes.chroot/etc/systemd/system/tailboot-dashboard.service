@@ -10,6 +10,9 @@ After=tailboot-configure.service
 Conflicts=getty@tty1.service
 
 [Service]
+# getty normally sets this; a direct ExecStart on a TTYPath does not, which
+# left `tput` unable to find a terminfo entry and silently fail.
+Environment=TERM=linux
 ExecStart=/usr/local/sbin/tailboot-dashboard
 StandardInput=tty
 StandardOutput=tty
