@@ -26,6 +26,11 @@ top_lines=$(( total_lines / 3 ))
 [ "${top_lines}" -ge 7 ] || top_lines=7
 log_pid=""
 
+color_red=$(tput setaf 1 2>/dev/null)
+color_green=$(tput setaf 2 2>/dev/null)
+color_yellow=$(tput setaf 3 2>/dev/null)
+color_reset=$(tput sgr0 2>/dev/null)
+
 restore_terminal() {
   tput csr 0 "$((total_lines - 1))" 2>/dev/null
   tput cnorm 2>/dev/null
@@ -72,6 +77,17 @@ status_label() {
   esac
 }
 
+# Green only once actually joined and approved; yellow for the one state
+# that needs a human (admin console approval); red for every other
+# not-yet-connected state, including tailscaled being unreachable.
+status_color() {
+  case "${ts_backend}" in
+    Running) printf '%s' "${color_green}" ;;
+    NeedsMachineAuth) printf '%s' "${color_yellow}" ;;
+    *) printf '%s' "${color_red}" ;;
+  esac
+}
+
 render_status() {
   tailscale_status
   hostname_now=$(cat /etc/hostname 2>/dev/null) || hostname_now=""
@@ -104,7 +120,7 @@ render_status() {
   row=0
   buf="${buf}$(tput cup "${row}" 0)$(tput el)TAILBOOT DASHBOARD  |  host: ${hostname_now}  |  $(date '+%Y-%m-%d %H:%M:%S %Z')"
   row=$((row + 1))
-  buf="${buf}$(tput cup "${row}" 0)$(tput el)Tailscale: $(status_label)"
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)Tailscale: $(status_color)$(status_label)${color_reset}"
   row=$((row + 1))
   buf="${buf}$(tput cup "${row}" 0)$(tput el)  tailnet: ${ts_tailnet}   ip: ${ts_ip}   version: ${ts_version}"
   row=$((row + 1))
