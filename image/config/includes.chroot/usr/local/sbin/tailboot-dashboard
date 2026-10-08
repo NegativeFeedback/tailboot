@@ -23,7 +23,7 @@ total_cols=$(tput cols 2>/dev/null)
 case "${total_lines}" in ''|*[!0-9]*) total_lines=24 ;; esac
 case "${total_cols}" in ''|*[!0-9]*) total_cols=80 ;; esac
 top_lines=$(( total_lines / 3 ))
-[ "${top_lines}" -ge 7 ] || top_lines=7
+[ "${top_lines}" -ge 8 ] || top_lines=8
 log_pid=""
 
 color_red=$(tput setaf 1 2>/dev/null)
@@ -77,6 +77,39 @@ status_label() {
   esac
 }
 
+# Direct network probe of Tailscale's actual coordination server, independent
+# of tailscaled's own retry/backoff state machine -- so a firewall or DNS
+# block that's keeping it stuck in NeedsLogin shows up immediately as its own
+# distinct, actionable line instead of only being guessed at from how long
+# the backend state stays unhappy. Any HTTP response at all (even an error
+# status) means the TLS connection to the real control endpoint succeeded,
+# which is all this is checking; curl's own exit status (not the HTTP status
+# code) is what distinguishes that from a network-level block or timeout.
+control_reachable() {
+  command -v curl > /dev/null 2>&1 || { echo "unknown"; return; }
+  if curl -s --max-time 2 -o /dev/null https://controlplane.tailscale.com/key 2>/dev/null; then
+    echo "reachable"
+  else
+    echo "blocked"
+  fi
+}
+
+control_label() {
+  case "${ctrl_state}" in
+    reachable) echo "reachable" ;;
+    unknown) echo "unknown (no curl)" ;;
+    *) echo "BLOCKED -- check firewall/DNS/proxy" ;;
+  esac
+}
+
+control_color() {
+  case "${ctrl_state}" in
+    reachable) printf '%s' "${color_green}" ;;
+    unknown) printf '%s' "${color_yellow}" ;;
+    *) printf '%s' "${color_red}" ;;
+  esac
+}
+
 # Green only once actually joined and approved; yellow for the one state
 # that needs a human (admin console approval); red for every other
 # not-yet-connected state, including tailscaled being unreachable.
@@ -90,6 +123,7 @@ status_color() {
 
 render_status() {
   tailscale_status
+  ctrl_state=$(control_reachable)
   hostname_now=$(cat /etc/hostname 2>/dev/null) || hostname_now=""
   [ -n "${hostname_now}" ] || hostname_now=$(hostname 2>/dev/null) || hostname_now="unknown"
 
@@ -121,6 +155,8 @@ render_status() {
   buf="${buf}$(tput cup "${row}" 0)$(tput el)TAILBOOT DASHBOARD  |  host: ${hostname_now}  |  $(date '+%Y-%m-%d %H:%M:%S %Z')"
   row=$((row + 1))
   buf="${buf}$(tput cup "${row}" 0)$(tput el)Tailscale: $(status_color)$(status_label)${color_reset}"
+  row=$((row + 1))
+  buf="${buf}$(tput cup "${row}" 0)$(tput el)Control server: $(control_color)$(control_label)${color_reset}"
   row=$((row + 1))
   buf="${buf}$(tput cup "${row}" 0)$(tput el)  tailnet: ${ts_tailnet}   ip: ${ts_ip}   version: ${ts_version}"
   row=$((row + 1))
