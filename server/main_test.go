@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -186,6 +188,57 @@ func TestGenerateISOScopePreservesArbitraryNames(t *testing.T) {
 	first := scope[0].(map[string]any)
 	if first["name"] != "Internal" || first["value"] != "10.0.0.0/8" {
 		t.Fatalf("scope[0] = %v, want name Internal / value 10.0.0.0/8", first)
+	}
+}
+
+// scopePayload builds a compact {"authKey":...,"scope":[...]} body with n
+// distinct entries, for exercising the actual byte-size boundaries of the
+// ISO config slot through the real HTTP handler rather than unit-testing
+// validateAndOpenISO/writePatchedISO in isolation (patch_test.go already
+// does that). Each entry is ~46 bytes compact, so callers pick n to land on
+// either side of configCapacity.
+func scopePayload(n int) string {
+	var sb strings.Builder
+	sb.WriteString(`{"authKey":"tskey-test","scope":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, `{"name":"Internal","value":"10.%d.%d.0/24"}`, i/256, i%256)
+	}
+	sb.WriteString(`]}`)
+	return sb.String()
+}
+
+// Regression test for a real production failure: a project with enough
+// scope entries (~150, ~6.9KB compact) to exceed the old 4095-byte slot but
+// comfortably fit the current 16383-byte one.
+func TestGenerateISOAcceptsScopeTooLargeForOldSlot(t *testing.T) {
+	setupVariants(t)
+
+	res := postISO(t, scopePayload(150))
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(res.Body)
+		t.Fatalf("status %d: %s", res.StatusCode, body)
+	}
+	cfg := patchedConfig(t, res)
+	scope, ok := cfg["scope"].([]any)
+	if !ok || len(scope) != 150 {
+		t.Fatalf("scope has %d entries, want 150", len(scope))
+	}
+}
+
+// 450 entries (~20.7KB compact) exceeds the current 16383-byte slot while
+// staying well under the 64KB raw-body cap, so this exercises
+// validateAndOpenISO's ErrConfigTooLarge specifically rather than the
+// earlier MaxBytesReader cutoff.
+func TestGenerateISORejectsConfigOverCapacity(t *testing.T) {
+	setupVariants(t)
+
+	res := postISO(t, scopePayload(450))
+	if res.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(res.Body)
+		t.Fatalf("status %d, want 400: %s", res.StatusCode, body)
 	}
 }
 

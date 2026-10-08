@@ -196,9 +196,13 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
-	// Config bodies are a few hundred bytes at most (the ISO slot itself caps
-	// at 4095 bytes); refuse anything wildly larger up front.
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	// The raw request body can run meaningfully larger than the 16383-byte
+	// slot it must ultimately fit into -- callers may send non-compact JSON
+	// (extra whitespace, e.g. Python's default json.dumps separators), and
+	// this check runs before the canonical re-marshal below shrinks it back
+	// down. 64 KiB gives generous headroom for that without being an actual
+	// DoS-sized body; validateAndOpenISO below is still the real gate.
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 
 	var cfg tailbootConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -222,7 +226,7 @@ func handleGenerateISO(w http.ResponseWriter, r *http.Request) {
 
 	// Re-marshal into a canonical form rather than forwarding the raw body:
 	// this drops unexpected extra fields and any attacker-controlled
-	// formatting/whitespace that would otherwise eat into the 4095-byte slot
+	// formatting/whitespace that would otherwise eat into the 16383-byte slot
 	// for no reason.
 	configJSON, err := json.Marshal(payload)
 	if err != nil {

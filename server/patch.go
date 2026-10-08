@@ -3,23 +3,24 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 )
 
 // configCapacity and the placeholder format mirror ../tailboot-iso-core.ts
-// exactly: a fixed 4096-byte slot ("TAILBOOT_CONFIG_V1" padded with '~' to
-// 4095 bytes, plus a trailing '\n') that a patched ISO always carries. A
-// patch replaces those 4095 bytes with raw JSON, space-padded, keeping the
+// exactly: a fixed 16384-byte slot ("TAILBOOT_CONFIG_V1" padded with '~' to
+// 16383 bytes, plus a trailing '\n') that a patched ISO always carries. A
+// patch replaces those 16383 bytes with raw JSON, space-padded, keeping the
 // final '\n' byte -- so the wire format is delimiter-free and every reader
 // (jq at boot, in this case) just parses past the trailing whitespace.
 const (
-	configCapacity = 4095
+	configCapacity = 16383
 	configSlotSize = configCapacity + 1
 )
 
 var (
-	ErrConfigTooLarge  = errors.New("configuration exceeds the 4095-byte ISO slot")
+	ErrConfigTooLarge  = fmt.Errorf("configuration exceeds the %d-byte ISO slot", configCapacity)
 	ErrIncompatibleISO = errors.New("this is not a compatible Tailboot ISO: the configuration slot does not match the release offset")
 )
 

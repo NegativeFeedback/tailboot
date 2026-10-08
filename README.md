@@ -124,9 +124,9 @@ Then either:
     `nmap`/`masscan` `-iL` without editing. Two names that slugify the same
     (e.g. "External IPs" and "external ips") merge into one file.
 
-  All of this rides in the same fixed 4095-byte slot patched into the ISO as
+  All of this rides in the same fixed 16383-byte slot patched into the ISO as
   `authKey`/`wifi`/`staticIp`, so there's a practical ceiling on how many
-  `scope` entries fit -- roughly 100 short CIDR entries, fewer for longer
+  `scope` entries fit -- roughly 400 short CIDR entries, fewer for longer
   hostnames. Past that, the API returns a clear 400 rather than silently
   truncating anything.
 

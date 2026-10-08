@@ -7,9 +7,9 @@
  * in place would corrupt the filesystem.
  */
 
-const CONFIG_CAPACITY = 4095;
+const CONFIG_CAPACITY = 16383;
 
-/** Write this exact 4096-byte record to /TAILBOOT.JSON in the base ISO. */
+/** Write this exact 16384-byte record to /TAILBOOT.JSON in the base ISO. */
 export const CONFIG_PLACEHOLDER =
   "TAILBOOT_CONFIG_V1".padEnd(CONFIG_CAPACITY, "~") + "\n";
 
