@@ -10,7 +10,8 @@
       label { display: block; margin-top: 1rem; font-weight: 600; }
       input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.5rem; box-sizing: border-box; }
       details { margin-top: 1.5rem; border-top: 1px solid #8888; padding-top: 1rem; }
-      button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; font-size: 1rem; }
+      button { margin-top: 1.5rem; margin-right: 0.5rem; padding: 0.6rem 1.2rem; font-size: 1rem; }
+      #cloud-hint { opacity: 0.75; font-size: 0.9rem; }
       #status { margin-top: 1rem; }
       #status[data-state="error"] { color: #c00; }
       #variant-hint { margin-top: 1rem; opacity: 0.75; font-size: 0.9rem; }
@@ -43,6 +44,8 @@
 
     <p id="variant-hint"></p>
     <button id="generate" type="button">Create ISO</button>
+    <button id="generate-cloud" type="button">Create cloud-init script</button>
+    <p id="cloud-hint">The cloud-init script is for cloud VMs that cannot boot an ISO. Paste it into the "user data" or "startup script" field when you create a Debian VM. It only uses the auth key; Wi-Fi and static IP do not apply.</p>
     <p id="status"></p>
 
     <script type="module">
@@ -69,6 +72,38 @@
       wifiSsidEl.addEventListener("input", updateVariantHint);
       wifiPasswordEl.addEventListener("input", updateVariantHint);
       updateVariantHint();
+
+      document.getElementById("generate-cloud").addEventListener("click", async () => {
+        const authKey = authKeyEl.value.trim();
+        if (!authKey) {
+          setStatus("Enter a Tailscale auth key.", "error");
+          return;
+        }
+
+        setStatus("Generating script…");
+        try {
+          const response = await fetch("/api/cloud-init", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ authKey }),
+          });
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "tailboot-cloud-init.sh";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          setStatus("Done. Check your downloads.");
+        } catch (error) {
+          setStatus(`Failed: ${error.message}`, "error");
+        } finally {
+          authKeyEl.value = "";
+        }
+      });
 
       document.getElementById("generate").addEventListener("click", async () => {
         const authKey = authKeyEl.value.trim();

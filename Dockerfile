@@ -17,7 +17,7 @@ ARG CONFIG_OFFSET=0
 ARG CONFIG_OFFSET_NOWIFI=0
 
 COPY server/go.mod ./
-COPY server/*.go ./
+COPY server/*.go server/tailboot-dashboard ./
 COPY server/static ./static
 
 RUN CGO_ENABLED=0 go build \

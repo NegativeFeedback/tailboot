@@ -174,6 +174,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("POST /api/iso", handleGenerateISO)
+	mux.HandleFunc("POST /api/cloud-init", handleGenerateCloudInit)
 
 	port := os.Getenv("PORT")
 	if port == "" {

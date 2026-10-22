@@ -185,6 +185,38 @@ troubleshooting -- this device has no console password by design, so this
 isn't a new hole. Other virtual consoles (Alt+F2, etc.) are untouched and
 always reach a normal shell, including if the dashboard itself crashes.
 
+## Cloud VMs (cloud-init)
+
+Use this when you cannot boot an ISO, such as on a cloud provider. Tailboot does
+not ship its own cloud image. It gives you a script for the provider's own
+Debian image.
+
+1. Choose **Create cloud-init script** in the web form, or call the API:
+
+   ```sh
+   curl -X POST http://localhost:8080/api/cloud-init \
+     -H 'Content-Type: application/json' \
+     -d '{"authKey": "tskey-auth-..."}' \
+     -o tailboot-cloud-init.sh
+   ```
+
+2. Create a VM from the provider's Debian 12 or 13 image.
+3. Paste the script into the VM's **user data** field. On GCP, use the
+   **startup script** field instead.
+4. When the VM boots, it installs Tailscale with
+   [Tailscale's installer](https://tailscale.com/install.sh) and joins your
+   tailnet. The VM appears under its hostname.
+
+Connect with `ssh <user>@<hostname>`, where `<user>` is the account that the
+Debian image creates. The same status dashboard as the ISO's console opens when
+you log in. It shows whether the VM is connected and approved. Press Ctrl+C to
+get a shell, or run `tailboot-dashboard` to open it again.
+
+The script uses only the auth key. Wi-Fi, static IP and engagement settings do
+not apply. Each boot creates a new ephemeral Tailscale machine identity, as on
+the ISO. The provider keeps the script, with the auth key in it, as the VM's user
+data. Treat user data as a secret and expire the key as usual.
+
 ## Security
 
 - The customized ISO contains the Tailscale auth key as plain text. It also
